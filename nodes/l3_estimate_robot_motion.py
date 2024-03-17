@@ -81,13 +81,41 @@ class WheelOdom:
             # Update your odom estimates with the latest encoder measurements and populate the relevant area
             # of self.pose and self.twist with estimated position, heading and velocity
 
-            # self.pose.position.x = xx
-            # self.pose.position.y = xx
-            # self.pose.orientation = xx
+            delta_left_rotation = (le - self.last_enc_l) * RAD_PER_TICK
+            delta_right_rotation = (re - self.last_enc_r) * RAD_PER_TICK
 
-            # self.twist.linear.x = mu_dot[0].item()
-            # self.twist.linear.y = mu_dot[1].item()
-            # self.twist.angular.z = mu_dot[2].item()
+            delta_t = sensor_state.header.stamp - self.last_time
+
+
+            delta_theta = (delta_right_rotation - delta_left_rotation) * WHEEL_RADIUS / BASELINE
+
+            euler = euler_from_ros_quat(self.pose.orientation)
+            updated_yaw = euler[2] + delta_theta
+            # normalize updated_yaw
+            updated_yaw = math.atan2(math.sin(updated_yaw), math.cos(updated_yaw))
+
+
+            pose_transform = np.array([[ cos(updated_yaw), 0],
+                                        [sin(updated_yaw), 0],
+                                        [0, 1]
+                                    ])
+            machine_coefficient = np.array([[WHEEL_RADIUS/2.0, WHEEL_RADIUS/2.0],
+                                            [WHEEL_RADIUS/2.0/BASELINE, -WHEEL_RADIUS/2.0/BASELINE]
+                                            ])
+
+            wheel_speed = np.array([[delta_right_rotation / delta_t],[delta_left_rotation / delta_t]])
+
+            velocity = np.dot(np.dot(pose_transform, machine_coefficient), wheel_speed)
+
+
+            self.twist.linear.x = velocity[0].item()
+            self.twist.linear.y = velocity[1].item()
+            self.twist.angular.z = delta_theta / delta_t
+
+            self.pose.position.x += velocity[0].item() * delta_t
+            self.pose.position.y += velocity[1].item() * delta_t
+            self.pose.orientation = ros_quat_from_euler([0, 0, updated_yaw])
+
 
             # publish the updates as a topic and in the tf tree
             current_time = rospy.Time.now()
