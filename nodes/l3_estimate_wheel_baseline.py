@@ -35,7 +35,7 @@ class wheelBaselineEstimator():
         #Reset the robot 
         reset_msg = Empty()
         self.reset_pub.publish(reset_msg)
-        print('Ready to start wheel radius calibration!')
+        print('Ready to start wheel baseline calibration!')
         return
 
     def safeDelPhi(self, a, b):
@@ -79,10 +79,8 @@ class wheelBaselineEstimator():
             left_rotation = self.del_left_encoder / TICKS_PER_ROTATION * 2 * np.pi
             right_rotation = self.del_right_encoder / TICKS_PER_ROTATION * 2 * np.pi
 
-            seperation = WHEEL_RADIUS / 2 * (right_rotation - left_rotation) / (NUM_ROTATIONS * 2 * np.pi)
-
-            # separation = ##
-            # print('Calibrated Separation: {} m'.format(separation))
+            separation = WHEEL_RADIUS / 2 * (right_rotation - left_rotation) / (NUM_ROTATIONS * 2 * np.pi)
+            print('Calibrated Separation: {} m'.format(separation))
 
             #Reset the robot and calibration routine
             self.lock.acquire()
