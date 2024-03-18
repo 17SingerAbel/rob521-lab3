@@ -7,6 +7,7 @@ import tf2_ros
 from skimage.draw import line as ray_trace
 import rospkg
 import matplotlib.pyplot as plt
+import math
 
 # msgs
 from nav_msgs.msg import OccupancyGrid, MapMetaData
@@ -94,6 +95,17 @@ class OccupancyGripMap:
 
         # YOUR CODE HERE!!! Loop through each measurement in scan_msg to get the correct angle and
         # x_start and y_start to send to your ray_trace_update function.
+        
+        ranges = scan_msg.ranges[::SCAN_DOWNSAMPLE]
+        for i in range(len(ranges)):
+            angle = odom_map[2] + i * scan_msg.angle_increment * SCAN_DOWNSAMPLE
+            normalized_angle = (angle + math.pi) % (2 * math.pi) - math.pi
+            x = odom_map[0] / CELL_SIZE
+            y = odom_map[1] / CELL_SIZE
+            range_mes = np.clip(ranges[i], 0, scan_msg.range_max) / CELL_SIZE
+
+            self.ray_trace_update(self.np_map, self.log_odds, x, y, normalized_angle, range_mes)
+
 
         # publish the message
         self.map_msg.info.map_load_time = rospy.Time.now()
@@ -115,6 +127,33 @@ class OccupancyGripMap:
         # YOUR CODE HERE!!! You should modify the log_odds object and the numpy map based on the outputs from
         # ray_trace and the equations from class. Your numpy map must be an array of int8s with 0 to 100 representing
         # probability of occupancy, and -1 representing unknown.
+        x_end = int(x_start + math.cos(angle) * range_mes)
+        y_end = int(y_start + math.sin(angle) * range_mes)
+
+        obstacleRange = range_mes + NUM_PTS_OBSTACLE
+
+        obstacle_x_end = int(x_start + math.cos(angle) * obstacleRange)
+        obstacle_y_end = int(y_start + math.sin(angle) * obstacleRange)
+
+        rr, cc = ray_trace(int(y_start), int(x_start), y_end, x_end)
+
+        map_width, map_height = self.np_map.shape
+        valid_indices  = (rr >= 0 )& (rr < map_width) &  (cc >= 0) &  (cc < map_height)
+        rr, cc = rr[valid_indices], cc[valid_indices]
+
+
+        red_rr, red_cc = ray_trace(y_end, x_end, obstacle_y_end, obstacle_x_end)
+        valid_indices = (red_rr >= 0) &   (red_rr < map_width) &  (red_cc >= 0) &  (red_cc < map_height)
+        red_rr, red_cc = red_rr[valid_indices], red_cc[valid_indices]
+
+        # udpate log_odd
+        log_odds[rr, cc] -= BETA
+        log_odds[red_rr, red_cc] += ALPHA
+
+
+        # update map with probability
+        map[rr, cc] = np.clip((self.log_odds_to_probability(log_odds[rr, cc]) * 100).astype(int), 0, 100)
+        map[red_rr, red_cc] = np.clip((self.log_odds_to_probability(log_odds[red_rr, red_cc]) * 100).astype(int), 0, 100)
 
         return map, log_odds
 
