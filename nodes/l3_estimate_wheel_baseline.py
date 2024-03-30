@@ -8,9 +8,9 @@ from std_msgs.msg import Empty
 from geometry_msgs.msg import Twist
 
 INT32_MAX = 2**31
-NUM_ROTATIONS = 3 
+NUM_ROTATIONS = 2
 TICKS_PER_ROTATION = 4096
-WHEEL_RADIUS = 0.066 / 2 #In meters
+WHEEL_RADIUS = 0.034 #In meters
 
 
 class wheelBaselineEstimator():
@@ -79,7 +79,7 @@ class wheelBaselineEstimator():
             left_rotation = self.del_left_encoder / TICKS_PER_ROTATION * 2 * np.pi
             right_rotation = self.del_right_encoder / TICKS_PER_ROTATION * 2 * np.pi
 
-            separation = WHEEL_RADIUS / 2 * (right_rotation - left_rotation) / (NUM_ROTATIONS * 2 * np.pi)
+            separation = WHEEL_RADIUS * (right_rotation - left_rotation) / (NUM_ROTATIONS * 2 * np.pi) / 2
             print('Calibrated Separation: {} m'.format(separation))
 
             #Reset the robot and calibration routine

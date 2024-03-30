@@ -102,7 +102,7 @@ class OccupancyGripMap:
             normalized_angle = (angle + math.pi) % (2 * math.pi) - math.pi
             x = odom_map[0] / CELL_SIZE
             y = odom_map[1] / CELL_SIZE
-            range_mes = np.clip(ranges[i], 0, scan_msg.range_max) / CELL_SIZE
+            range_mes = np.clip(ranges[i], scan_msg.range_min, scan_msg.range_max) / CELL_SIZE
 
             self.ray_trace_update(self.np_map, self.log_odds, x, y, normalized_angle, range_mes)
 

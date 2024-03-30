@@ -8,7 +8,7 @@ import tf_conversions
 import tf2_ros
 import rosbag
 import rospkg
-import math
+
 # msgs
 from turtlebot3_msgs.msg import SensorState
 from nav_msgs.msg import Odometry
@@ -20,8 +20,8 @@ from utils import convert_pose_to_tf, euler_from_ros_quat, ros_quat_from_euler
 
 ENC_TICKS = 4096
 RAD_PER_TICK = 0.001533981
-WHEEL_RADIUS = .066 / 2
-BASELINE = .287 / 2
+WHEEL_RADIUS = .034
+BASELINE = .143
 
 
 class WheelOdom:
@@ -68,60 +68,53 @@ class WheelOdom:
     def sensor_state_cb(self, sensor_state_msg):
         # Callback for whenever a new encoder message is published
         # set initial encoder pose
-        current_time = rospy.Time.now()
-
         if self.last_enc_l is None:
             self.last_enc_l = sensor_state_msg.left_encoder
             self.last_enc_r = sensor_state_msg.right_encoder
             self.last_time = sensor_state_msg.header.stamp
         else:
+            current_time = sensor_state_msg.header.stamp
+            dt = (current_time - self.last_time).to_sec()
+
             # update calculated pose and twist with new data
             le = sensor_state_msg.left_encoder
             re = sensor_state_msg.right_encoder
+
+            delta_le = (le - self.last_enc_l) * RAD_PER_TICK
+            delta_re = (re - self.last_enc_r) * RAD_PER_TICK
+
+            self.last_enc_l = le 
+            self.last_enc_r = re
+            self.last_time = current_time
+
+            # Distance traveled by each wheel
+            d_left = delta_le * WHEEL_RADIUS
+            d_right = delta_re * WHEEL_RADIUS
+
+            # Average distance traveled by the robot
+            d_center = (d_left + d_right) / 2
+
+            # Change in orientation
+            delta_theta = (d_right - d_left) / (2 * BASELINE)
+            theta = euler_from_ros_quat(self.pose.orientation)[2] + delta_theta
+
+            # Update position
+            dx = d_center * np.cos(theta)
+            dy = d_center * np.sin(theta)
 
             # # YOUR CODE HERE!!!
             # Update your odom estimates with the latest encoder measurements and populate the relevant area
             # of self.pose and self.twist with estimated position, heading and velocity
 
-            delta_left_rotation = (le - self.last_enc_l) * RAD_PER_TICK
-            delta_right_rotation = (re - self.last_enc_r) * RAD_PER_TICK
+            # Update pose
+            self.pose.position.x += dx
+            self.pose.position.y += dy
+            self.pose.orientation = ros_quat_from_euler((0, 0, theta))
 
-            delta_t = sensor_state_msg.header.stamp.to_sec() - self.last_time.to_sec()
-
-
-            delta_theta = (delta_right_rotation - delta_left_rotation) * WHEEL_RADIUS / BASELINE
-
-            euler = euler_from_ros_quat(self.pose.orientation)
-            updated_yaw = euler[2] + delta_theta
-            # normalize updated_yaw
-            updated_yaw = math.atan2(math.sin(updated_yaw), math.cos(updated_yaw))
-
-
-            pose_transform = np.array([[ math.cos(updated_yaw), 0],
-                                        [math.sin(updated_yaw), 0],
-                                        [0, 1]
-                                    ])
-            machine_coefficient = np.array([[WHEEL_RADIUS/2.0, WHEEL_RADIUS/2.0],
-                                            [WHEEL_RADIUS/2.0/BASELINE, -WHEEL_RADIUS/2.0/BASELINE]
-                                            ])
-
-            wheel_speed = np.array([[delta_right_rotation / delta_t],[delta_left_rotation / delta_t]])
-
-            velocity = np.dot(np.dot(pose_transform, machine_coefficient), wheel_speed)
-
-
-            self.twist.linear.x = velocity[0].item()
-            self.twist.linear.y = velocity[1].item()
-            self.twist.angular.z = delta_theta / delta_t
-
-            self.pose.position.x += velocity[0].item() * delta_t
-            self.pose.position.y += velocity[1].item() * delta_t
-            self.pose.orientation = ros_quat_from_euler([0, 0, updated_yaw])
-
-            self.last_time = current_time
-            self.last_enc_l = le
-            self.last_enc_r = re
-
+            # Update twist (velocity)
+            self.twist.linear.x = d_center / dt
+            self.twist.linear.y = 0  # assuming no lateral movement
+            self.twist.angular.z = delta_theta / dt
 
             # publish the updates as a topic and in the tf tree
             current_time = rospy.Time.now()
@@ -135,10 +128,14 @@ class WheelOdom:
             self.wheel_odom_pub.publish(self.wheel_odom)
 
             self.bag.write('odom_est', self.wheel_odom)
+            self.bag.write('odom_onboard', self.odom)
 
             # for testing against actual odom
+            # print("Wheel Odom: x: %2.3f, y: %2.3f, t: %2.3f" % (
+            #     self.pose.position.x, self.pose.position.y, mu[2].item()
+            # ))
             print("Wheel Odom: x: %2.3f, y: %2.3f, t: %2.3f" % (
-                self.pose.position.x, self.pose.position.y, updated_yaw
+                self.pose.position.x, self.pose.position.y, theta
             ))
             print("Turtlebot3 Odom: x: %2.3f, y: %2.3f, t: %2.3f" % (
                 self.odom.pose.pose.position.x, self.odom.pose.pose.position.y,
@@ -148,7 +145,6 @@ class WheelOdom:
     def odom_cb(self, odom_msg):
         # get odom from turtlebot3 packages
         self.odom = odom_msg
-        self.bag.write('odom_onboard', self.odom)
 
     def plot(self, bag):
         data = {"odom_est":{"time":[], "data":[]}, 
